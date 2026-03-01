@@ -39,3 +39,4 @@ data/*.csv
 *.swo
 .DS_Store
 Thumbs.db
+JobTrackerExec.spec
