@@ -2,3 +2,5 @@ streamlit>=1.32.0
 polars>=0.20.0
 plotly>=5.18.0
 pyarrow>=15.0.0
+pywebview>=4.4.1
+pyinstaller>=6.5.0
