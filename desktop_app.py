@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import logging
 import os
 import shlex
@@ -10,6 +11,10 @@ import sys
 import time
 import webbrowser
 from dataclasses import dataclass
+
+if sys.platform.startswith("linux"):
+    os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu")
+    os.environ.setdefault("QT_LOGGING_RULES", "qt.webenginecontext.debug=false")
 
 try:
     import webview  # type: ignore
@@ -28,6 +33,7 @@ class AppConfig:
     browser_probe_timeout_seconds: float = 2.0
     window_width: int = 1280
     window_height: int = 800
+    healthcheck_path: str = "/_stcore/health"
 
     @property
     def url(self) -> str:
@@ -70,11 +76,11 @@ class StreamlitServer:
 
         while time.time() < deadline:
             if self._process is not None and self._process.poll() is not None:
-                if self._is_port_open(self._config.host, self._config.port):
+                if self._is_service_ready(self._config.host, self._config.port):
                     return
                 raise RuntimeError("Streamlit process exited before startup completed")
 
-            if self._is_port_open(self._config.host, self._config.port):
+            if self._is_service_ready(self._config.host, self._config.port):
                 return
 
             time.sleep(self._config.poll_interval_seconds)
@@ -99,6 +105,25 @@ class StreamlitServer:
             except subprocess.TimeoutExpired:
                 self._process.kill()
                 self._process.wait(timeout=5)
+
+    def _is_service_ready(self, host: str, port: int) -> bool:
+        if not self._is_port_open(host, port):
+            return False
+
+        return self._is_http_ready(host, port)
+
+    def _is_http_ready(self, host: str, port: int) -> bool:
+        connection = http.client.HTTPConnection(host=host, port=port, timeout=1)
+
+        try:
+            connection.request("GET", self._config.healthcheck_path)
+            response = connection.getresponse()
+            response.read()
+            return 200 <= response.status < 300
+        except (OSError, http.client.HTTPException):
+            return False
+        finally:
+            connection.close()
 
     @staticmethod
     def _is_port_open(host: str, port: int) -> bool:
@@ -212,7 +237,7 @@ class DesktopLauncher:
                 width=self._config.window_width,
                 height=self._config.window_height,
             )
-            webview.start()
+            webview.start(debug=False)
             return True
         except Exception as exc:
             logging.warning(str(exc))
